@@ -16,9 +16,9 @@
 package org.terasology.craft.components.actions;
 
 import com.google.common.collect.Maps;
-import org.terasology.components.actions.ActionTarget;
+import org.terasology.logic.actions.ActionTarget;
 import org.terasology.entitySystem.Component;
-import org.terasology.entitySystem.EntityRef;
+import org.terasology.entitySystem.entity.EntityRef;
 
 import java.util.ArrayList;
 import java.util.Map;

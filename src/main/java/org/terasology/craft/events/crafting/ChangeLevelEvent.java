@@ -1,9 +1,9 @@
 package org.terasology.craft.events.crafting;
 
-import org.terasology.entitySystem.AbstractEvent;
-import org.terasology.entitySystem.EntityRef;
+import org.terasology.entitySystem.event.AbstractConsumableEvent;
+import org.terasology.entitySystem.entity.EntityRef;
 
-public class ChangeLevelEvent extends AbstractEvent {
+public class ChangeLevelEvent extends AbstractConsumableEvent {
     private float nextLevel;
     private EntityRef instigator;
 

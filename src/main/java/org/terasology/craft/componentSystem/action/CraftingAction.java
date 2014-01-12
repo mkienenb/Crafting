@@ -16,12 +16,14 @@
 package org.terasology.craft.componentSystem.action;
 
 import com.google.common.collect.Maps;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.terasology.componentSystem.items.InventorySystem;
-import org.terasology.components.InventoryComponent;
-import org.terasology.components.ItemComponent;
-import org.terasology.components.LocalPlayerComponent;
+import org.terasology.logic.inventory.CoreInventoryManager;
+import org.terasology.logic.inventory.InventoryComponent;
+import org.terasology.logic.inventory.ItemComponent;
+import org.terasology.logic.inventory.SlotBasedInventoryManager;
+import org.terasology.logic.inventory.events.ReceivedItemEvent;
 import org.terasology.craft.components.actions.CraftingActionComponent;
 import org.terasology.craft.components.utility.CraftRecipeComponent;
 import org.terasology.craft.events.crafting.AddItemEvent;
@@ -29,19 +31,29 @@ import org.terasology.craft.events.crafting.ChangeLevelEvent;
 import org.terasology.craft.events.crafting.CheckRefinementEvent;
 import org.terasology.craft.events.crafting.DeleteItemEvent;
 import org.terasology.craft.rendering.CraftingGrid;
-import org.terasology.entityFactory.BlockItemFactory;
-import org.terasology.entitySystem.*;
-import org.terasology.events.ActivateEvent;
-import org.terasology.events.inventory.ReceiveItemEvent;
-import org.terasology.game.CoreRegistry;
-import org.terasology.logic.LocalPlayer;
+import org.terasology.world.block.items.BlockItemFactory;
+import org.terasology.logic.characters.CharacterComponent;
+import org.terasology.logic.common.ActivateEvent;
+import org.terasology.engine.CoreRegistry;
+import org.terasology.entitySystem.entity.EntityBuilder;
+import org.terasology.entitySystem.entity.EntityManager;
+import org.terasology.entitySystem.entity.EntityRef;
+import org.terasology.entitySystem.event.ReceiveEvent;
+import org.terasology.entitySystem.prefab.Prefab;
+import org.terasology.entitySystem.prefab.PrefabManager;
+import org.terasology.entitySystem.systems.ComponentSystem;
+import org.terasology.entitySystem.systems.In;
+import org.terasology.entitySystem.systems.RegisterMode;
+import org.terasology.entitySystem.systems.RegisterSystem;
+import org.terasology.logic.players.LocalPlayer;
+import org.terasology.logic.location.LocationComponent;
 import org.terasology.logic.manager.GUIManager;
 import org.terasology.math.AABB;
-import org.terasology.rendering.gui.widgets.UIItemContainer;
+import org.terasology.rendering.gui.widgets.UIInventoryGrid;
 import org.terasology.world.WorldProvider;
 import org.terasology.world.block.Block;
 import org.terasology.world.block.BlockComponent;
-import org.terasology.world.block.management.BlockManager;
+import org.terasology.world.block.BlockManager;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -51,8 +63,13 @@ import java.util.Map;
 /**
  * @author Small-Jeeper
  */
-@RegisterComponentSystem
-public class CraftingAction implements EventHandlerSystem {
+@RegisterSystem(RegisterMode.AUTHORITY)
+public class CraftingAction implements ComponentSystem {
+    @In
+    private BlockManager blockManager;
+    @In
+    private SlotBasedInventoryManager slotBasedInventoryManager;
+    
     private WorldProvider worldProvider;
     private EntityManager entityManager;
     private Map<String, ArrayList<Prefab>> entitesWithRecipes = Maps.newHashMap();
@@ -119,8 +136,8 @@ public class CraftingAction implements EventHandlerSystem {
         CraftingActionComponent craftingComponent = entity.getComponent(CraftingActionComponent.class);
 
         if (!craftingComponent.possibleItem.equals(EntityRef.NULL)) {
-            EntityRef player = CoreRegistry.get(LocalPlayer.class).getEntity();
-            player.send(new ReceiveItemEvent(craftingComponent.possibleItem));
+            EntityRef player = CoreRegistry.get(LocalPlayer.class).getCharacterEntity();
+            player.send(new ReceivedItemEvent(craftingComponent.possibleItem));
             decreaseItems(entity, player);
 
             checkEmptyCraftBlock(entity);
@@ -179,13 +196,13 @@ public class CraftingAction implements EventHandlerSystem {
 
         if (craftItem != null && craftItem.name.toLowerCase().equals(playerItem.name.toLowerCase())) {
 
-            if (craftItem.stackCount >= InventorySystem.MAX_STACK) {
+            if (craftItem.stackCount >= CoreInventoryManager.MAX_STACK) {
                 return;
             }
 
-            if ((craftItem.stackCount + sendingCount) > InventorySystem.MAX_STACK) {
-                returnedCount = (byte) ((craftItem.stackCount + sendingCount) - InventorySystem.MAX_STACK);
-                craftItem.stackCount = InventorySystem.MAX_STACK;
+            if ((craftItem.stackCount + sendingCount) > CoreInventoryManager.MAX_STACK) {
+                returnedCount = (byte) ((craftItem.stackCount + sendingCount) - CoreInventoryManager.MAX_STACK);
+                craftItem.stackCount = CoreInventoryManager.MAX_STACK;
 
             } else {
                 craftItem.stackCount += sendingCount;
@@ -213,11 +230,12 @@ public class CraftingAction implements EventHandlerSystem {
             craftItem.stackCount = sendingCount;
             entityToCraftBlock.saveComponent(craftItem);
 
-            EntityRef player = CoreRegistry.get(LocalPlayer.class).getEntity();
-            ItemComponent tItem = selectedEntity.getComponent(ItemComponent.class);
-            tItem.container = EntityRef.NULL;
-            selectedEntity.saveComponent(tItem);
-            player.send(new ReceiveItemEvent(entityManager.copy(selectedEntity)));
+            EntityRef player = CoreRegistry.get(LocalPlayer.class).getCharacterEntity();
+            // TODO: no longer track containers for this 
+//            ItemComponent tItem = selectedEntity.getComponent(ItemComponent.class);
+//            tItem.container = EntityRef.NULL;
+//            selectedEntity.saveComponent(tItem);
+            player.send(new ReceivedItemEvent(entityManager.copy(selectedEntity)));
             craftingComponent.getCurrentLevelElements().set(selectedCell, entityToCraftBlock);
         }
 
@@ -279,12 +297,13 @@ public class CraftingAction implements EventHandlerSystem {
         //Send item to player
         EntityRef entityForPlayer = entityManager.copy(selectedEntity);
         ItemComponent entityForPlayerItem = entityForPlayer.getComponent(ItemComponent.class);
-        entityForPlayerItem.container = EntityRef.NULL;
+        // TODO: no longer track containers for items
+//        entityForPlayerItem.container = EntityRef.NULL;
         entityForPlayerItem.stackCount = sendingCount;
         entityForPlayer.saveComponent(entityForPlayerItem);
 
-        EntityRef player = CoreRegistry.get(LocalPlayer.class).getEntity();
-        player.send(new ReceiveItemEvent(entityForPlayer));
+        EntityRef player = CoreRegistry.get(LocalPlayer.class).getCharacterEntity();
+        player.send(new ReceivedItemEvent(entityForPlayer));
 
 
         if (craftItem.stackCount == 0) {
@@ -319,10 +338,10 @@ public class CraftingAction implements EventHandlerSystem {
             return;
         }
 
-        LocalPlayerComponent localPlayer = event.getInstigator().getComponent(LocalPlayerComponent.class);
+        CharacterComponent craftingCharacter = event.getInstigator().getComponent(CharacterComponent.class);
         InventoryComponent inventory = event.getInstigator().getComponent(InventoryComponent.class);
 
-        if (localPlayer == null || inventory == null) {
+        if (craftingCharacter == null || inventory == null) {
             disablePossibleItem(craftingComponent);
             return;
         }
@@ -343,8 +362,9 @@ public class CraftingAction implements EventHandlerSystem {
             }
         }
 
-        UIItemContainer toolbar = (UIItemContainer) CoreRegistry.get(GUIManager.class).getWindowById("hud").getElementById("toolbar");
-        ItemComponent instigatorItem = inventory.itemSlots.get(toolbar.getSlotStart() + localPlayer.selectedTool).getComponent(ItemComponent.class);
+        UIInventoryGrid toolbar = (UIInventoryGrid) CoreRegistry.get(GUIManager.class).getWindowById("hud").getElementById("toolbar");
+        EntityRef instigatorItemEntity = slotBasedInventoryManager.getItemInSlot(event.getInstigator(), toolbar.getStartSlot() + craftingCharacter.selectedItem);
+        ItemComponent instigatorItem = instigatorItemEntity.getComponent(ItemComponent.class);
 
         int selectedCell = getSelectedItemFromCraftBlock(entity, craftingComponent.getCurrentLevel());
 
@@ -367,9 +387,11 @@ public class CraftingAction implements EventHandlerSystem {
 
                     CraftRecipeComponent craftRecipe = refinementData.resultPrefab.getComponent(CraftRecipeComponent.class);
                     craftRecipe.resultCount = refinementData.resultCount;
-                    refinementData.resultPrefab.setComponent(craftRecipe);
+                    
+                    EntityBuilder builder = entityManager.newBuilder(refinementData.resultPrefab);
+                    builder.addComponent(craftRecipe);
+                    EntityRef refinementElement = builder.build();
 
-                    EntityRef refinementElement = createNewElement(refinementData.resultPrefab);
 
                     if (!refinementElement.equals(EntityRef.NULL)) {
                         craftingComponent.possibleItem = refinementElement;
@@ -489,7 +511,7 @@ public class CraftingAction implements EventHandlerSystem {
         EntityRef result = EntityRef.NULL;
 
         if (resultPrefab != null) {
-            recipe = entityManager.create(resultPrefab.listComponents());
+            recipe = entityManager.create(resultPrefab.iterateComponents());
         }
 
 
@@ -497,12 +519,14 @@ public class CraftingAction implements EventHandlerSystem {
             Block recipeBlock = null;
             BlockItemFactory blockFactory = new BlockItemFactory(entityManager);
             if (craftRecipe.type != CraftRecipeComponent.CraftRecipeType.SELF) {
-                result = blockFactory.newInstance(BlockManager.getInstance().getBlockFamily(craftRecipe.result));
+                result = blockFactory.newInstance(blockManager.getBlockFamily(craftRecipe.result));
             } else {
-                recipeBlock = BlockManager.getInstance().getBlock(resultPrefab);
+                // TODO: this used to call blocksByPrefabName.get(prefab.getName());
+                recipeBlock = getBlockByPrefab(resultPrefab);
 
                 if (recipeBlock != null) {
-                    result = blockFactory.newInstance(recipeBlock.getBlockFamily(), recipe);
+                    // TODO: recipe used to be the "placedBlock" argument in new instance.
+                    result = blockFactory.newInstance(recipeBlock.getBlockFamily());
                 }
             }
 
@@ -514,7 +538,8 @@ public class CraftingAction implements EventHandlerSystem {
             ItemComponent newItem = new ItemComponent();
 
             newItem.stackCount = oldItem.stackCount;
-            newItem.container = oldItem.container;
+            // TODO: items no longer have containers
+//            newItem.container = oldItem.container;
             newItem.name = oldItem.name;
             newItem.baseDamage = oldItem.baseDamage;
             newItem.consumedOnUse = oldItem.consumedOnUse;
@@ -540,6 +565,18 @@ public class CraftingAction implements EventHandlerSystem {
 
 
         return result;
+    }
+
+    private Block getBlockByPrefab(Prefab resultPrefab) {
+        // TODO: this used to call blocksByPrefabName.get(prefab.getName());
+        Iterable<Block> iterable = blockManager.listRegisteredBlocks();
+        for (Block block : iterable) {
+            if (resultPrefab.getName().equals(block.getPrefab())) {
+                return block;
+            }
+        }
+        
+        return null;
     }
 
     /*
@@ -585,15 +622,16 @@ public class CraftingAction implements EventHandlerSystem {
 
         if (craftingComponent.isRefinement) {
 
-            LocalPlayerComponent localPlayer = playerEntity.getComponent(LocalPlayerComponent.class);
+            CharacterComponent crafterCharacter = playerEntity.getComponent(CharacterComponent.class);
             InventoryComponent inventory = playerEntity.getComponent(InventoryComponent.class);
 
-            ItemComponent instigatorItem = inventory.itemSlots.get(localPlayer.selectedTool).getComponent(ItemComponent.class);
+            EntityRef instigatorItemEntity = slotBasedInventoryManager.getItemInSlot(playerEntity, crafterCharacter.selectedItem);
+            ItemComponent instigatorItem = instigatorItemEntity.getComponent(ItemComponent.class);
 
             instigatorItem.stackCount--;
 
             if (instigatorItem.stackCount < 1) {
-                inventory.itemSlots.get(localPlayer.selectedTool).destroy();
+                slotBasedInventoryManager.destroyItem(playerEntity, instigatorItemEntity);
             }
 
         }
@@ -610,8 +648,7 @@ public class CraftingAction implements EventHandlerSystem {
         if (craftingComponent.getAllElements().size() == 0) {
 
             BlockComponent blockComp = craftBlockEntity.getComponent(BlockComponent.class);
-            Block currentBlock = worldProvider.getBlock(blockComp.getPosition());
-            worldProvider.setBlock(blockComp.getPosition(), BlockManager.getInstance().getAir(), currentBlock);
+            worldProvider.setBlock(blockComp.getPosition(), BlockManager.getAir());
 
             craftBlockEntity.destroy();
             return;

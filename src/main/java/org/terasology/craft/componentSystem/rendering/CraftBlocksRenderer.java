@@ -1,43 +1,74 @@
 package org.terasology.craft.componentSystem.rendering;
 
-import com.google.common.collect.Maps;
+import static org.lwjgl.opengl.GL11.GL_ALWAYS;
+import static org.lwjgl.opengl.GL11.GL_LEQUAL;
+import static org.lwjgl.opengl.GL11.GL_QUADS;
+import static org.lwjgl.opengl.GL11.GL_SRC_ALPHA;
+import static org.lwjgl.opengl.GL11.glBegin;
+import static org.lwjgl.opengl.GL11.glBindTexture;
+import static org.lwjgl.opengl.GL11.glBlendFunc;
+import static org.lwjgl.opengl.GL11.glColor4f;
+import static org.lwjgl.opengl.GL11.glDepthFunc;
+import static org.lwjgl.opengl.GL11.glDepthMask;
+import static org.lwjgl.opengl.GL11.glDisable;
+import static org.lwjgl.opengl.GL11.glEnable;
+import static org.lwjgl.opengl.GL11.glEnd;
+import static org.lwjgl.opengl.GL11.glMatrixMode;
+import static org.lwjgl.opengl.GL11.glPopMatrix;
+import static org.lwjgl.opengl.GL11.glPushMatrix;
+import static org.lwjgl.opengl.GL11.glRotatef;
+import static org.lwjgl.opengl.GL11.glScalef;
+import static org.lwjgl.opengl.GL11.glTranslated;
+import static org.lwjgl.opengl.GL11.glTranslatef;
+
+import java.nio.FloatBuffer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+import javax.vecmath.Vector2f;
+import javax.vecmath.Vector3f;
+
 import org.lwjgl.BufferUtils;
 import org.lwjgl.opengl.GL11;
 import org.newdawn.slick.Color;
+import org.terasology.asset.AssetType;
+import org.terasology.asset.AssetUri;
 import org.terasology.asset.Assets;
-import org.terasology.componentSystem.RenderSystem;
-import org.terasology.components.InventoryComponent;
-import org.terasology.components.ItemComponent;
 import org.terasology.craft.components.actions.CraftingActionComponent;
 import org.terasology.craft.rendering.CraftingGrid;
-import org.terasology.entitySystem.*;
-import org.terasology.game.CoreRegistry;
-import org.terasology.input.CameraTargetSystem;
+import org.terasology.engine.CoreRegistry;
+import org.terasology.entitySystem.entity.EntityManager;
+import org.terasology.entitySystem.entity.EntityRef;
+import org.terasology.entitySystem.systems.ComponentSystem;
+import org.terasology.entitySystem.systems.In;
+import org.terasology.entitySystem.systems.RegisterMode;
+import org.terasology.entitySystem.systems.RegisterSystem;
+import org.terasology.entitySystem.systems.RenderSystem;
+import org.terasology.input.cameraTarget.CameraTargetSystem;
+import org.terasology.logic.inventory.InventoryComponent;
+import org.terasology.logic.inventory.ItemComponent;
+import org.terasology.logic.inventory.SlotBasedInventoryManager;
 import org.terasology.logic.manager.GUIManager;
 import org.terasology.math.AABB;
 import org.terasology.math.Vector3i;
-import org.terasology.model.inventory.Icon;
-import org.terasology.rendering.assets.Font;
-import org.terasology.rendering.assets.GLSLShaderProgramInstance;
-import org.terasology.rendering.assets.Texture;
+import org.terasology.rendering.assets.font.Font;
+import org.terasology.rendering.assets.material.Material;
+import org.terasology.rendering.assets.mesh.Mesh;
+import org.terasology.rendering.assets.shader.ShaderProgramFeature;
+import org.terasology.rendering.assets.texture.Texture;
 import org.terasology.rendering.gui.framework.UIDisplayElement;
-import org.terasology.rendering.gui.widgets.UIItemContainer;
-import org.terasology.rendering.primitives.Mesh;
+import org.terasology.rendering.gui.widgets.UIInventoryGrid;
+import org.terasology.rendering.icons.Icon;
 import org.terasology.rendering.primitives.MeshFactory;
 import org.terasology.rendering.world.WorldRenderer;
 import org.terasology.world.WorldProvider;
 import org.terasology.world.block.Block;
 import org.terasology.world.block.BlockComponent;
-import org.terasology.world.block.BlockItemComponent;
 import org.terasology.world.block.family.BlockFamily;
+import org.terasology.world.block.items.BlockItemComponent;
 
-import javax.vecmath.Vector2f;
-import javax.vecmath.Vector3f;
-import java.nio.FloatBuffer;
-import java.util.ArrayList;
-import java.util.Map;
-
-import static org.lwjgl.opengl.GL11.*;
+import com.google.common.collect.Maps;
 
 /**
  * TODO: This class is filled up with duplicated rendering code...
@@ -45,8 +76,11 @@ import static org.lwjgl.opengl.GL11.*;
  * @author Small-Jeeper
  */
 
-@RegisterComponentSystem(headedOnly = true)
-public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
+@RegisterSystem(RegisterMode.CLIENT)
+public class CraftBlocksRenderer implements RenderSystem, ComponentSystem {
+    @In
+    private SlotBasedInventoryManager slotBasedInventoryManager;
+    
     private Texture toolTipTexture;
     private Texture terrainTex;
     private WorldProvider worldProvider;
@@ -68,7 +102,7 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
     private EntityRef resultItemContainer;
 
     // container which shows the result of craft
-    private UIItemContainer guiCraftElement;
+    private UIInventoryGrid guiCraftElement;
     private UIDisplayElement craftingCloudBackground;
     private UIDisplayElement craftingResultBackground;
     private UIDisplayElement craftingArrow;
@@ -78,9 +112,9 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
     private Font font = Assets.getFont("engine:default");
 
     // shader program instances
-    GLSLShaderProgramInstance billboardShaderProgramInstance;
-    GLSLShaderProgramInstance blockShaderProgramInstance;
-    GLSLShaderProgramInstance blockTexturedShaderProgramInstance;
+    Material billboardShaderProgramInstance;
+    Material blockShaderProgramInstance;
+    Material blockTexturedShaderProgramInstance;
 
     @In
     private WorldRenderer worldRenderer;
@@ -96,15 +130,15 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
         craftingResultBackground = null;
         craftingArrow = null;
 
-        billboardShaderProgramInstance = Assets.getShader("engine:defaultTextured").createShaderProgramInstance();
-        billboardShaderProgramInstance.addFeatureIfAvailable(GLSLShaderProgramInstance.ShaderProgramFeatures.FEATURE_ALPHA_REJECT);
+        billboardShaderProgramInstance = Assets.getMaterial("engine:defaultTextured");
+        billboardShaderProgramInstance.activateFeature(ShaderProgramFeature.FEATURE_ALPHA_REJECT);
 
-        blockShaderProgramInstance = Assets.getShader("engine:block").createShaderProgramInstance();
-        blockShaderProgramInstance.addFeatureIfAvailable(GLSLShaderProgramInstance.ShaderProgramFeatures.FEATURE_USE_MATRIX_STACK);
+        blockShaderProgramInstance = Assets.getMaterial("engine:block");
+        blockShaderProgramInstance.activateFeature(ShaderProgramFeature.FEATURE_USE_MATRIX_STACK);
         blockShaderProgramInstance.setBoolean("textured", false);
 
-        blockTexturedShaderProgramInstance = Assets.getShader("engine:block").createShaderProgramInstance();
-        blockTexturedShaderProgramInstance.addFeatureIfAvailable(GLSLShaderProgramInstance.ShaderProgramFeatures.FEATURE_USE_MATRIX_STACK);
+        blockTexturedShaderProgramInstance = Assets.getMaterial("engine:block");
+        blockTexturedShaderProgramInstance.activateFeature(ShaderProgramFeature.FEATURE_USE_MATRIX_STACK);
         blockTexturedShaderProgramInstance.setBoolean("textured", true);
     }
 
@@ -119,7 +153,7 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
         boolean foundedTargetWithCraft = false;
         boolean foundedTarget = false;
 
-        for (EntityRef entity : entityManager.iteratorEntities(CraftingActionComponent.class)) {
+        for (EntityRef entity : entityManager.getEntitiesWith(CraftingActionComponent.class)) {
             AABB aabb = null;
             CraftingActionComponent craftingActionComponent = entity.getComponent(CraftingActionComponent.class);
 
@@ -143,14 +177,21 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
                             initResultItem();
                         }
 
-                        if (!resultItemContainer.getComponent(InventoryComponent.class).itemSlots.get(0).equals(craftingActionComponent.possibleItem)) {
-                            InventoryComponent inventoryComponent = resultItemContainer.getComponent(InventoryComponent.class);
-                            inventoryComponent.itemSlots.set(0, craftingActionComponent.possibleItem);
+//                        if (!resultItemContainer.getComponent(InventoryComponent.class).itemSlots.get(0).equals(craftingActionComponent.possibleItem)) {
+//                            InventoryComponent inventoryComponent = resultItemContainer.getComponent(InventoryComponent.class);
+//                            inventoryComponent.itemSlots.set(0, craftingActionComponent.possibleItem);
+//                            resultItemContainer.saveComponent(inventoryComponent);
+//                        }
+                        InventoryComponent inventoryComponent = resultItemContainer.getComponent(InventoryComponent.class);
+                        EntityRef itemInSlot0 = slotBasedInventoryManager.getItemInSlot(resultItemContainer, 0);
+                        if (!itemInSlot0.equals(craftingActionComponent.possibleItem)) {
+                            // TODO: old item is not saved?  Why are we working directly only with slot zero?
+                            slotBasedInventoryManager.putItemInSlot(resultItemContainer, 0, craftingActionComponent.possibleItem);
                             resultItemContainer.saveComponent(inventoryComponent);
                         }
 
                         if (guiCraftElement == null) {
-                            guiCraftElement = (UIItemContainer) CoreRegistry.get(GUIManager.class).getWindowById("hud").getElementById("craftElement");
+                            guiCraftElement = (UIInventoryGrid) CoreRegistry.get(GUIManager.class).getWindowById("hud").getElementById("craftElement");
                             craftingCloudBackground = CoreRegistry.get(GUIManager.class).getWindowById("hud").getElementById("craftingCloudBackground");
                             craftingResultBackground = CoreRegistry.get(GUIManager.class).getWindowById("hud").getElementById("craftingResultBackground");
                             craftingArrow = CoreRegistry.get(GUIManager.class).getWindowById("hud").getElementById("craftingArrow");
@@ -206,7 +247,7 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
         }
 
         if (guiCraftElement != null && !foundedTargetWithCraft && isGUIVisible()) {
-            guiCraftElement.setEntity(EntityRef.NULL);
+            guiCraftElement.linkToEntity(EntityRef.NULL);
             guiCraftElement.setVisible(false);
             craftingCloudBackground.setVisible(false);
             craftingResultBackground.setVisible(false);
@@ -249,7 +290,10 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
 
         if (itemMesh == null) {
             Icon icon = Icon.get(iconName);
-            itemMesh = MeshFactory.getInstance().generateItemMesh(icon.getTextureSimpleUri(), icon.getX(), icon.getY());
+            // TODO: this needs a better URI for the item mesh
+            AssetUri meshUri = new AssetUri(AssetType.MESH, icon.getTexture().getURI().getModuleName(),
+                    "generatedMesh." + icon.getTexture().getURI().getAssetName());
+            itemMesh = MeshFactory.generateItemMesh(meshUri, icon.getTexture(), icon.getX(), icon.getY());
             iconMeshes.put(iconName, itemMesh);
         }
 
@@ -280,9 +324,10 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
                 renderNail(worldPos);
             }
         } else {
-            if (!guiCraftElement.getEntity().equals(resultItemContainer)) {
-                guiCraftElement.setEntity(resultItemContainer);
-            }
+            // TODO: Not currently a way to get the entity. Does it really matter if we check the entity if we're going to set it to the same thing anyway?
+//            if (!guiCraftElement.getEntity().equals(resultItemContainer)) {
+                guiCraftElement.linkToEntity(resultItemContainer);
+//            }
             if (!isGUIVisible()) {
                 guiCraftElement.setVisible(true);
                 craftingCloudBackground.setVisible(true);
@@ -328,8 +373,18 @@ public class CraftBlocksRenderer implements RenderSystem, EventHandlerSystem {
     private void initResultItem() {
         resultItemContainer = entityManager.create("core:chest");
         InventoryComponent inventory = resultItemContainer.getComponent(InventoryComponent.class);
-        inventory.itemSlots.clear();
-        inventory.itemSlots.add(EntityRef.NULL);
+        // TODO: replace with a inventoryManager destroyAll() method
+        int numSlots = slotBasedInventoryManager.getNumSlots(resultItemContainer);
+        List<EntityRef> itemsToDestroy = new ArrayList<EntityRef>(numSlots);
+        for (int slotIndex = 0; slotIndex < numSlots; slotIndex++) {
+            EntityRef item = slotBasedInventoryManager.getItemInSlot(resultItemContainer, slotIndex);
+            if (EntityRef.NULL != item) {
+                itemsToDestroy.add(item);
+            }
+        }
+        for (EntityRef itemToDestroy : itemsToDestroy) {
+            slotBasedInventoryManager.destroyItem(resultItemContainer, itemToDestroy);
+        }
         resultItemContainer.saveComponent(inventory);
     }
 
