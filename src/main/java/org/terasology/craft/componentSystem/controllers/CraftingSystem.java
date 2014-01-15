@@ -79,8 +79,8 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
     @In
     private LocalPlayer localPlayer;
     
-    @In
-    private PlayerInventorySystem playerInventorySystem;
+//    @In
+//    private PlayerInventorySystem playerInventorySystem;
     
     @In
     private SlotBasedInventoryManager slotBasedInventoryManager;
@@ -275,7 +275,7 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
     
                 if (!useButtonPushed && stateCreateBlock == statesCreateBlock.CREATED) {
                     stateCreateBlock = statesCreateBlock.NOT_READY;
-                    playerInventorySystem.resetDropMark();
+                    playerInventorySystem_resetDropMark();
                     resetDropMark();
                     event.consume();
                     return;
@@ -288,13 +288,13 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
                 if (craftingComponent != null) {
                     float dropPower = getDropPower();
                     if (stateCreateBlock != statesCreateBlock.CREATED) {
-                        playerInventorySystem.resetDropMark();
+                        playerInventorySystem_resetDropMark();
                         resetDropMark();
                         event.consume();
                         return;
                     }
                     if (dontDrop) {
-                        playerInventorySystem.resetDropMark();
+                        playerInventorySystem_resetDropMark();
                         resetDropMark();
                         dontDrop = false;
                         return;
@@ -302,13 +302,22 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
     
                     dropPower *= 25f;
                     resetDropMark();
-                    playerInventorySystem.resetDropMark();
+                    playerInventorySystem_resetDropMark();
                     event.consume();
                 }
             }
         }
     }
 
+
+    // PlayerInventorySystem isn't globally registered anymore, and I'm not sure why it even matters if we do this,
+    // so for now, just manually do what this method would have done.
+    private void playerInventorySystem_resetDropMark() {
+        UIImage crossHair = (UIImage) CoreRegistry.get(GUIManager.class).getWindowById("hud").getElementById("crosshair");
+        lastTimeThrowInteraction = 0;
+        crossHair.setTextureSize(new Vector2f(20f, 20f));
+        crossHair.setTextureOrigin(new Vector2f(24f, 24f));
+    }
 
     @ReceiveEvent(components = {ClientComponent.class}, priority = EventPriority.PRIORITY_HIGH)
     public void onNextItem(ToolbarNextButton event, EntityRef entity) {
@@ -486,7 +495,7 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
                 }
 
                 BlockItemFactory blockFactory = new BlockItemFactory(entityManager);
-                EntityRef craftEntity = blockFactory.newInstance(blockManager.getBlockFamily("craft:craft"));
+                EntityRef craftEntity = blockFactory.newInstance(blockManager.getBlockFamily("crafting:craft"));
 
                 BlockItemComponent blockItemComponent = craftEntity.getComponent(BlockItemComponent.class);
 
@@ -582,7 +591,7 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
         lastTimeThrowInteraction = 0;
         crossHair.getTextureSize().set(new Vector2f(20f / 256f, 20f / 256f));
         crossHair.getTextureOrigin().set(new Vector2f(24f / 256f, 24f / 256f));
-        playerInventorySystem.resetDropMark();
+        playerInventorySystem_resetDropMark();
     }
 
     private float getDropPower() {
@@ -632,7 +641,7 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
 //        craftElement.setCellSize(new Vector2f(36f, 36f));
         craftElement.setVisible(false);
 
-        craftingArrow = new UIImage(Assets.getTexture("craft:gui_craft"));
+        craftingArrow = new UIImage(Assets.getTexture("crafting:gui_craft"));
         craftingArrow.setSize(new Vector2f(70f, 33f));
         craftingArrow.setTextureOrigin(new Vector2f(186f, 0f));
         craftingArrow.setTextureSize(new Vector2f(70f, 33f));
@@ -642,7 +651,7 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
         craftingArrow.setPosition(new Vector2f(-5f, 60f));
         craftingArrow.setVisible(false);
 
-        craftingResultBackground = new UIImage(Assets.getTexture("craft:gui_craft"));
+        craftingResultBackground = new UIImage(Assets.getTexture("crafting:gui_craft"));
         craftingResultBackground.setSize(new Vector2f(40f, 40f));
         craftingResultBackground.setTextureOrigin(new Vector2f(111f, 0f));
         craftingResultBackground.setTextureSize(new Vector2f(75f, 75f));
@@ -652,7 +661,7 @@ public class CraftingSystem implements UpdateSubscriberSystem, RenderSystem, Com
         craftingResultBackground.setPosition(new Vector2f(-70f, 60f));
         craftingResultBackground.setVisible(false);
 
-        craftingCloudBackground = new UIImage(Assets.getTexture("craft:gui_craft"));
+        craftingCloudBackground = new UIImage(Assets.getTexture("crafting:gui_craft"));
         craftingCloudBackground.setSize(new Vector2f(222f, 134f));
         craftingCloudBackground.setTextureOrigin(new Vector2f(0f, 92f));
         craftingCloudBackground.setTextureSize(new Vector2f(111f, 67f));
