@@ -123,7 +123,7 @@ public class CraftBlocksRenderer implements RenderSystem, ComponentSystem {
     public void initialise() {
         worldProvider = CoreRegistry.get(WorldProvider.class);
         entityManager = CoreRegistry.get(EntityManager.class);
-        toolTipTexture = Assets.getTexture("craft:gui_craft");
+        toolTipTexture = Assets.getTexture("crafting:gui_craft");
         terrainTex = Assets.getTexture("engine:items");
         guiCraftElement = null;
         craftingCloudBackground = null;

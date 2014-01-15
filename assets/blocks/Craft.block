@@ -19,13 +19,13 @@
     "shadowCasting" : false,
     "penetrable" : true,
     "tiles" : {
-        "sides" : "craft:CraftTile",
-        "front" : "craft:CraftTile",
-        "topBottom" : "craft:CraftTile"
+        "sides" : "crafting:CraftTile",
+        "front" : "crafting:CraftTile",
+        "topBottom" : "crafting:CraftTile"
     },
     "entity" : {
-        "prefab" : "craft:craft",
-        "mode" : "persistent"
+        "prefab" : "crafting:craft",
+		"keepActive" : true
     },
     "inventory" : {
         "stackable" : false,
